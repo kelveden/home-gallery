@@ -45,6 +45,7 @@ ENV GALLERY_OPEN_BROWSER=false
 ENV GALLERY_USE_NATIVE=ffprobe,ffmpeg
 # Use polling for safety of possible network mounts. Try 0 to use inotify via fs.watch
 ENV GALLERY_WATCH_POLL_INTERVAL=300
+ENV GALLERY_USE_PWA_HTML_PRECACHING=true
 
 EXPOSE 3000
 

@@ -25,7 +25,7 @@ export default defineConfig(() => {
       sourcemap: true,
     },
     plugins: [
-      react(), 
+      react(),
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
@@ -66,6 +66,10 @@ export default defineConfig(() => {
         },
         workbox: {
           navigateFallbackDenylist: [/\/api\//, /\/files\//],
+          globPatterns:
+            process.env.GALLERY_USE_PWA_HTML_PRECACHING == "true"
+              ? ["**\/*.{js,wasm,css,html}"]
+              : ["**\/*.{js,wasm,css}"],
         }
       }),
       pwaConditionalPlugin({ disabled: false }),

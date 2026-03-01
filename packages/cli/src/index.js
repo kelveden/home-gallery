@@ -41,6 +41,6 @@ export const cli = (buildInfo = {}) => {
     .demandCommand()
     .help()
     .alias('h', 'help')
-    .epilog('(c) 2024 HomeGallery - https://home-gallery.org')
+    .epilog('(c) 2026 HomeGallery - https://home-gallery.org')
     .parse();
 }

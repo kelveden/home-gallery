@@ -50,5 +50,23 @@ Tags: server,sources,download
 * Request file "/api/sources/files/unknown.JPG"
 * Response status is "404"
 
+## Invalid path
+
+* Set config "sources[0].downloadable" to "true"
+* Add file "index/images/DJI_0035.JPG"
+* Update database
+* Start only server
+* Request file "/api/sources/files/invalid%2fpath"
+* Response status is "400"
+
+## Not allowed
+
+* Set config "sources[0].downloadable" to "true"
+* Add file "index/images/DJI_0035.JPG"
+* Update database
+* Start only server
+* Request file "/api/sources/files/../../../../attack.JPG"
+* Response status is "403"
+
 ___
 * Stop server

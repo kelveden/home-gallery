@@ -9,10 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Raise node to v24
 - webapp: Use vite as build tool
 
 ### Fixed
 
+- server: Fix arbitrary file access via source api
 - webapp: Fix PWA settings with downloadable sources
 - webapp: Fix custom prefix path with vite build
 - cast: Fix command

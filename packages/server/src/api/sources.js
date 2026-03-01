@@ -50,7 +50,12 @@ function createStaticIndex(indexNameToDir) {
       return sendError(res, 405, `Method is not allowed`)
     }
 
-    const parts = req.path.substring(1).split('/').map(decodeURI)
+    const parts = req.path.substring(1).split('/').map(decodeURIComponent)
+    if (parts.find(p => p.includes('/'))) {
+      log.debug(`Reject path with invalid segment ${req.path.substring(1)}`)
+      return sendError(res, 400, `Invalid path`)
+    }
+
     const indexName = parts.shift()
     const dir = indexNameToDir[indexName]
 

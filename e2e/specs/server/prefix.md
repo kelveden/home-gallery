@@ -8,8 +8,9 @@ Tags: server,prefix
 ## Enable prefix
 
 * Start server with args "--prefix gallery"
-* Server has file "/gallery/favicon.ico"
 * Wait for file "/gallery/api/database.json"
+* Request file "/gallery/favicon.ico"
+* Response status is "200"
 
 ## Redirect to prefix
 

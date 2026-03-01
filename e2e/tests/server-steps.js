@@ -5,9 +5,8 @@ const { Buffer } = require('buffer')
 const fs = require('fs').promises
 const http = require('http')
 const https = require('https')
-const url = require('url')
+const URL = require('url').URL
 const assert = require('assert')
-const fetch = require('node-fetch')
 const express = require('express')
 
 const { generateId, nextPort, waitFor, runCliAsync, killChildProcess, getBaseDir, getPath, getStorageDir, getDatabaseFilename, getEventsFilename, readDatabase, addCliEnv, resolveProperty, parseValue, assertDeep, log } = require('../utils')
@@ -15,30 +14,94 @@ const { generateId, nextPort, waitFor, runCliAsync, killChildProcess, getBaseDir
 const serverTestHost = '127.0.0.1'
 const servers = {}
 
-const insecureOption = {
-  agent: new https.Agent({
-    rejectUnauthorized: false,
+const insecureAgent = new https.Agent({
+  rejectUnauthorized: false,
+})
+
+const request = (path, options = {}) => {
+  return new Promise((resolve, reject) => {
+    const serverUrl = gauge.dataStore.scenarioStore.get('serverUrl')
+    if (!serverUrl) {
+      return reject(new Error(`Expected serverUrl but was empty. Start server first`))
+    }
+
+    const prefix = gauge.dataStore.scenarioStore.get('prefix') || ''
+    const headers = gauge.dataStore.scenarioStore.get('request.headers') || {}
+    const agent = serverUrl.startsWith('https') ? insecureAgent : undefined
+
+    const requestUrl = `${serverUrl}${prefix}${path || ''}`
+    const url = new URL(serverUrl)
+    const requestOptions = {
+      method: options.method || 'GET',
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port,
+      path: `${prefix}${path || ''}`, // allow invalid test path like /api/../../etc/passwd
+      headers: Object.assign({}, options.headers || {}, headers),
+      timeout: options.timeout || 300,
+      agent
+    }
+
+    const req = http.request(requestOptions, res => {
+      res._originUrl = requestUrl
+      res._originHeaders = requestOptions.headers
+      resolve(res)
+    })
+    req.on('error', reject)
+    if (options.body) {
+      req.write(options.body)
+    }
+    req.end()
   })
 }
 
-const fetchFacade = (path, options = {}) => {
-  const url = gauge.dataStore.scenarioStore.get('serverUrl')
-  const prefix = gauge.dataStore.scenarioStore.get('prefix') || ''
-  assert(!!url, `Expected serverUrl but was empty. Start server first`)
-
-  const headers = gauge.dataStore.scenarioStore.get('request.headers') || {}
-  const agent = url.startsWith('https') ? insecureOption : {}
+const bodyResponse = (res) => {
   const t0 = Date.now()
-  const fetchUrl = `${url}${prefix}${path || ''}`
-  return fetch(fetchUrl, Object.assign(options, {timeout: 500, headers: Object.assign({}, options.headers, headers), redirect: 'manual'}, agent))
-    .then(res => {
+  return new Promise((resolve, reject) => {
+    let body = ''
+
+    res.setEncoding('utf8')
+    res.on('data', chunk => body += chunk)
+    res.on('error', reject)
+    res.on('end', () => {
+      const url = res._originUrl || {}
+      const headers = res._originHeaders
+
       const curlHeaders = Object.entries(headers).map(([key, value]) => `-H "${key}: ${value}"`).join(' ') + ' '
-      const curl = `curl ${url.startsWith('https') ? '-k ' : ''}${curlHeaders}${url}${path || ''}`
+      const curl = `curl ${res.req.protocol == 'https:' ? '-k ' : ''}${curlHeaders}${url}`
       const data = {duration: Date.now() - t0, curl, headers}
-      log.debug(data, `Fetched ${path} with status ${res.status}`)
-      return res
+      log.debug(data, `Fetched ${url} with status ${res.statusCode}`)
+
+      gauge.dataStore.scenarioStore.put('response.status', res.statusCode)
+      resolve([res, body])
     })
+  })
 }
+
+// Implement fetch like facade to have better control over raw test request
+const fetchFacade = (path, options = {}) => request(path, options)
+  .then(bodyResponse)
+  .then(([res, body]) => {
+    const fetchLike = {
+      ok: res.statusCode >= 200 && res.statusCode < 300,
+      status: res.statusCode,
+      headers: {
+        get: name => res.headers[name.toLowerCase()]
+      },
+      json() {
+        try {
+          return Promise.resolve(JSON.parse(body))
+        } catch (e) {
+          return Promise.reject(e)
+        }
+      },
+      text() {
+        return Promise.resolve(body)
+      }
+    }
+
+    return fetchLike
+  })
 
 const fetchDatabase = () => fetchFacade('/api/database.json')
   .then(res => res.ok ? res : Promise.reject(`Response code is not successfull`))
@@ -170,7 +233,8 @@ step("Start mock server", async () => {
 })
 
 step("Wait for file <file>", async (file) => {
-  return waitFor(() => fetchFacade(file), 10 * 1000).catch(e => {throw new Error(`Waiting for file ${file} failed. Error ${e}`)})
+  const onlyOk = res => res.ok ? res : Promise.reject(`Response code is not successfull`)
+  return waitFor(() => fetchFacade(file).then(onlyOk), 10 * 1000).catch(e => {throw new Error(`Waiting for file ${file} failed. Error ${e}`)})
 })
 
 step("Wait for database", () => waitFor(() => fetchDatabase(), 10 * 1000).catch(e => {throw new Error(`Waiting for database failed. Error ${e}`)}))
@@ -198,9 +262,7 @@ const waitForEvent = async (eventPredicate) => {
 }
 
 step("Listen to server events", async () => {
-  const serverUrl = gauge.dataStore.scenarioStore.get('serverUrl')
-
-  const onResponse = res => {
+  const onResponse = (res) => {
     res.setEncoding('utf8')
     res.on('data', (data) => {
       const lines = data.toString().split('\n').filter(line => !!line)
@@ -214,25 +276,7 @@ step("Listen to server events", async () => {
     })
   }
 
-  const headers = gauge.dataStore.scenarioStore.get('request.headers') || {}
-  const agent = serverUrl.startsWith('https') ? insecureOption : undefined
-
-  const parsedUrl = url.parse(`${serverUrl}/api/events/stream`)
-  const options = {
-    method: 'GET',
-    protocol: parsedUrl.protocol,
-    hostname: parsedUrl.hostname,
-    port: parsedUrl.port,
-    path: parsedUrl.path,
-    headers,
-    agent
-  }
-  const req = http.request(options, onResponse)
-
-  req.on('error', err => {
-    gauge.message(`Listen to EventStream failed: ${err}`)
-  })
-  req.end()
+  request('/api/events/stream').then(onResponse)
 
   return waitForEvent(event => event.type == 'pong')
 })

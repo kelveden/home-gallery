@@ -58,13 +58,20 @@ function createStaticIndex(indexNameToDir) {
       return sendError(res, 404, `File not found`)
     }
 
-    const file = path.resolve(dir, ...parts)
-    const filename = parts.join('/')
+    const file = path.normalize(path.resolve(dir, ...parts))
+    const filename = path.relative(dir, file);
+    if (filename.startsWith('..')) {
+      log.debug(`Reject path outside of base directory ${dir}: ${req.path.substring(1)}`)
+      return sendError(res, 403, `Forbidden`)
+    }
+
+    const unixFilename = path.sep != '/' ? filename.split(path.sep).join('/') : filename
     stat(file, (err, stats) => {
       if (err || !stats.isFile()) {
-        return sendError(res, 404, `File ${filename} for index ${indexName} not found`)
+        log.trace({indexName, dir, filename}, `File not found: ${unixFilename} from index ${indexName}`)
+        return sendError(res, 404, `File ${unixFilename} for index ${indexName} not found`)
       }
-      log.trace({indexName, dir, filename}, `Send original file ${filename} from index ${indexName}`)
+      log.trace({indexName, dir, filename}, `Send original file ${unixFilename} from index ${indexName}`)
       return res.sendFile(file)
     })
   }

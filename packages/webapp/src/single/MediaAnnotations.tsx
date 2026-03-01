@@ -74,8 +74,8 @@ export function MediaAnnotations({media, imgRef, src}: {media: any, imgRef: Reac
 
   return (
     <>
-      {faceRects}
       {objectRects}
+      {faceRects}
     </>
   )
 }
